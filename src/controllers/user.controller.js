@@ -3,6 +3,23 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiRes } from "../utils/ApiRes.js";
+
+const genAccessTokenAndRefreshToken = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accesToken = User.genAccessToken();
+    const refreshToken = User.genRefreshToken();
+
+    // saving refresh token to db
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+    return { accesToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(500, "Something went wrong while generating tokens");
+  }
+};
+
+// register
 const registerUser = asyncHandler(async (req, res) => {
   const { username, email, fullName, password } = req.body;
   if (
@@ -35,9 +52,6 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   // if(req.files.coverImage[0].path)
-  // {
-
-  // }
 
   // upload on cloudinary
   const avatar = await uploadOnCloudinary(avatarLocalPath);
@@ -72,4 +86,72 @@ const registerUser = asyncHandler(async (req, res) => {
   return res.status(201).json(new ApiRes(200, createdUser, "User Registered"));
 });
 
-export { registerUser };
+// login
+const loginUser = asyncHandler(async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if (username || email === "") {
+    throw new ApiError(400, "Username or Email is required");
+  }
+
+  // check through db
+  const user = await User.findOne({ $or: [{ username }, { email }] });
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+  // pass check, the password is coming from req.body
+  const passwordValid = await user.passCheck(password);
+  if (!passwordValid) {
+    throw new ApiError(401, "Password is wrong");
+  }
+  const { accesToken, refreshToken } = await genAccessTokenAndRefreshToken(
+    user._id
+  );
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+  // makes the cookies not editable
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+  return res
+    .status(200)
+    .cookie("accessToken", accesToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiRes(200, {
+        user: loggedInUser,
+        accesToken,
+        refreshToken,
+      }),
+      "User logged in successfully"
+    );
+});
+
+// logout
+const logoutUser = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        refreshToken: undefined,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiRes(200, {}, "User Logout!"));
+});
+
+export { registerUser, loginUser, logoutUser };
