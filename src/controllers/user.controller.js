@@ -7,8 +7,8 @@ import { ApiRes } from "../utils/ApiRes.js";
 const genAccessTokenAndRefreshToken = async (userId) => {
   try {
     const user = await User.findById(userId);
-    const accesToken = User.genAccessToken();
-    const refreshToken = User.genRefreshToken();
+    const accesToken = user.genAccessToken();
+    const refreshToken = user.genRefreshToken();
 
     // saving refresh token to db
     user.refreshToken = refreshToken;
@@ -39,22 +39,23 @@ const registerUser = asyncHandler(async (req, res) => {
   const avatarLocalPath = req.files?.avatar[0]?.path;
   // const coverImageLocalPath = req.files?.coverImage[0]?.path;
   // console.log(coverImageLocalPath);
+
+  // if(req.files.coverImage[0].path)
+
+  // upload on cloudinary
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
   let coverImageLocalPath;
   if (
     req.files &&
     Array.isArray(req.files.coverImage) &&
     req.files.coverImage.length > 0
   ) {
-    coverImageLocalPath = req.files.coverImage[0];
+    coverImageLocalPath = req.files.coverImage[0].path;
   }
   if (!avatarLocalPath) {
     throw new ApiError(400, "Avatar is required");
   }
 
-  // if(req.files.coverImage[0].path)
-
-  // upload on cloudinary
-  const avatar = await uploadOnCloudinary(avatarLocalPath);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
   if (!avatar) {
@@ -90,8 +91,11 @@ const registerUser = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { username, email, password } = req.body;
 
-  if (username || email === "") {
-    throw new ApiError(400, "Username or Email is required");
+  // if (username || email === "") {
+  //   throw new ApiError(400, "Username or Email is required");
+  // }
+  if (!username && !email) {
+    throw new ApiError(400, "username or email is required");
   }
 
   // check through db
@@ -121,12 +125,16 @@ const loginUser = asyncHandler(async (req, res) => {
     .cookie("accessToken", accesToken, options)
     .cookie("refreshToken", refreshToken, options)
     .json(
-      new ApiRes(200, {
-        user: loggedInUser,
-        accesToken,
-        refreshToken,
-      }),
-      "User logged in successfully"
+      new ApiRes(
+        200,
+        {
+          user: loggedInUser,
+          accesToken,
+          refreshToken,
+        },
+        "User logged in successfully"
+      )
+      
     );
 });
 
